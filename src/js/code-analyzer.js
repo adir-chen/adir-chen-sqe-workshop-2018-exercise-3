@@ -1,7 +1,8 @@
 import * as esprima from 'esprima';
 import * as escodegen from 'escodegen';
-export {init, checkGlobalVars, symSubstitution, globBeforeFunc, globAfterFunc, localVarDict};
+export {init, checkGlobalVars, symSubstitution, paramsToVal, globBeforeFunc, globAfterFunc, localVarDict, dictParams};
 
+let dictParams = {};
 let localVarDict = {};
 let rowNo = 0;
 let globBeforeFunc = [];
@@ -9,8 +10,7 @@ let globAfterFunc = [];
 
 function init(){
     localVarDict = {};
-    globBeforeFunc = [];
-    globAfterFunc = [];
+    dictParams = {};
 }
 
 function replaceLocalVars(codegen){
@@ -36,7 +36,22 @@ function parseVariableDeclaration(codegen, root) {
 }
 
 function parseExpressionStatement(codegen, root){
-    if ((escodegen.generate(codegen.expression.left) in localVarDict)){
+    if (codegen.expression.type == 'UpdateExpression'){
+        let varName = escodegen.generate(codegen.expression.argument);
+        if (codegen.expression.operator == '++'){
+            localVarDict[varName] = '(' + localVarDict[varName] + ' + 1 )';
+        }
+        else{
+            localVarDict[varName] = '(' + localVarDict[varName] + ' - 1 )';
+        }
+    }
+    else{
+        parseExpressionStatementNotUpdate(codegen, root);
+    }
+}
+
+function parseExpressionStatementNotUpdate(codegen, root){
+    if ((escodegen.generate(codegen.expression.left) in localVarDict)) {
         if (codegen.expression.right.type == 'ArrayExpression') {
             delete localVarDict[escodegen.generate(codegen.expression.left)];
             for (let i = 0; i < codegen.expression.right.elements.length; i++) {
@@ -45,7 +60,7 @@ function parseExpressionStatement(codegen, root){
             }
             localVarDict[escodegen.generate(codegen.expression.left)] = '(' + replaceLocalVars(escodegen.generate(codegen.expression.right)) + ')';
         }
-        else{
+        else {
             localVarDict[escodegen.generate(codegen.expression.left)] = '(' + replaceLocalVars(escodegen.generate(codegen.expression.right)) + ')';
             evalVar(escodegen.generate(codegen.expression.left));
         }
@@ -169,5 +184,24 @@ function addGlobalVarsToDict(){
         for (var globVarAfter in  globAfterFunc[j].declarations) {
             localVarDict[globAfterFunc[j].declarations[globVarAfter].id.name] = escodegen.generate(globAfterFunc[j].declarations[globVarAfter].init);
         }
+    }
+}
+
+function paramsToVal(codeAfterSymSubs, inputVector){
+    let inputVectorArr = inputVector.split(',');
+    let arrParam = '';
+    let countParam = 0;
+    for (let i = 0; i < inputVectorArr.length; i++) {
+        if (inputVectorArr[i].includes('[')){
+            arrParam += inputVectorArr[i] + ','; i++;
+            while (!inputVectorArr[i].includes(']')){
+                arrParam += inputVectorArr[i] + ','; i++;
+            }
+            dictParams[codeAfterSymSubs.body[0].params[countParam].name] = arrParam + inputVectorArr[i];
+            arrParam = '';
+        }
+        else
+            dictParams[codeAfterSymSubs.body[0].params[countParam].name] = inputVectorArr[i];
+        countParam++;
     }
 }
